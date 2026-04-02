@@ -8,7 +8,6 @@ export const sidebarMenu: SidebarMenuItem[] = [
     id: 'hr',
     label: 'Quản lý nhân sự',
     active: true,
-    expanded: true,
     children: [
       { id: 'probation', label: 'Hợp đồng thử việc', active: true },
       { id: 'labor', label: 'Hợp đồng lao động' }

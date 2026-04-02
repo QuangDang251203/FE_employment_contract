@@ -4,14 +4,16 @@ import TopHeader from './TopHeader';
 
 interface AppLayoutProps {
   children: ReactNode;
+  onLogout?: () => void;
+  onNavigate?: (menuId: string, subMenuId?: string) => void;
 }
 
-function AppLayout({ children }: AppLayoutProps) {
+function AppLayout({ children, onLogout, onNavigate }: AppLayoutProps) {
   return (
     <div className="dashboard-layout">
-      <Sidebar />
+      <Sidebar onNavigate={onNavigate} />
       <div className="dashboard-main">
-        <TopHeader />
+        <TopHeader onLogout={onLogout} />
         <main className="dashboard-content">{children}</main>
       </div>
     </div>

@@ -1,4 +1,22 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { contractService } from '../../services/contractService';
+import { branchService, Branch } from '../../services/branchService';
+import SearchableSelect from '../common/SearchableSelect';
+import { CreateContractRequestDTO } from '../../types/contract';
+
+const JOB_POSITIONS = [
+  'Chuyên viên kỹ thuật',
+  'Chuyên viên Kỹ thuật Sáng tạo số',
+  'Nhân viên giám sát, phòng ngừa rủi ro',
+  'Chuyên viên An toàn thông tin',
+  'Chuyên viên Phần mềm ứng dụng',
+  'Chuyên viên bảo mật',
+  'Chuyên viên Quản trị số',
+  'Chuyên viên Phát triển phần mềm',
+  'Chuyên viên Quản trị cơ sở dữ liệu',
+  'Chuyên viên Quản trị cơ sở dữ liệu dự phòng',
+  'Chuyên viên Quản trị hệ thống máy chủ',
+];
 
 interface AddProbationContractFormProps {
   onBack: () => void;
@@ -120,13 +138,60 @@ function DateInputWithPicker({ placeholder, ariaLabel, value, onChange }: DateIn
 }
 
 function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
+  // Contract info
+  const [decisionNumber, setDecisionNumber] = useState('');
   const [decisionDate, setDecisionDate] = useState('');
-  const [birthDate, setBirthDate] = useState('');
-  const [issueDate, setIssueDate] = useState('');
+  
+  // Employee info
+  const [fullName, setFullName] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
+  const [nationality, setNationality] = useState('');
+  const [dateOfBirth, setBirthDate] = useState('');
+  const [citizenIdNumber, setCitizenIdNumber] = useState('');
+  const [dateIssued, setIssueDate] = useState('');
+  const [issuingLocation, setIssuingLocation] = useState('');
+  const [address, setAddress] = useState('');
+  const [levelOfTraining, setLevelOfTraining] = useState('');
+  
+  // Contract terms
   const [startDate, setStartDate] = useState('');
   const [probationDays, setProbationDays] = useState('');
-  const [salaryGrade, setSalaryGrade] = useState('');
-  const [salaryStep, setSalaryStep] = useState('');
+  const [workLocation, setWorkLocation] = useState<number | string>('');
+  const [jobPosition, setJobPosition] = useState<string | number>('');
+  
+  // Branches data
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(true);
+  
+  // Salary info
+  const [salaryGrade, setSalaryGrade] = useState('Ngạch 7');
+  const [salaryStep, setSalaryStep] = useState('Mức 1');
+  const [percentageOfSalary, setPercentageOfSalary] = useState('85');
+  const [probationarySalary, setProbationarySalary] = useState('21.500.000');
+  
+  // UI states
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+
+  // Fetch branches on component mount
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        setBranchesLoading(true);
+        const data = await branchService.getAllBranches();
+        setBranches(data);
+      } catch (err) {
+        console.error('Error fetching branches:', err);
+        setError('Lỗi tải danh sách nơi làm việc');
+      } finally {
+        setBranchesLoading(false);
+      }
+    };
+
+    fetchBranches();
+  }, []);
 
   const endDate = useMemo(() => calculateEndDate(startDate, probationDays), [startDate, probationDays]);
 
@@ -134,6 +199,146 @@ function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
     () => Array.from({ length: 7 }, (_, index) => `Mức ${index + 1}`),
     []
   );
+
+  // File upload handler
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      const newFiles = Array.from(files);
+      // Filter to only allow PDF files
+      const validFiles = newFiles.filter(file => {
+        return file.type === 'application/pdf';
+      });
+      
+      if (validFiles.length < newFiles.length) {
+        setError('Chỉ hỗ trợ file PDF');
+        return;
+      }
+      
+      setUploadedFiles([...uploadedFiles, ...validFiles]);
+      // Reset input
+      e.target.value = '';
+    }
+  };
+
+  // Remove file handler
+  const handleRemoveFile = (indexToRemove: number) => {
+    setUploadedFiles(uploadedFiles.filter((_, index) => index !== indexToRemove));
+  };
+
+  // Validation function
+  const validateForm = (): boolean => {
+    setError('');
+    
+    const requiredFields = {
+      'Căn cứ quyết định số': decisionNumber,
+      'Ngày quyết định': decisionDate,
+      'Họ và tên': fullName,
+      'Email': accountEmail,
+      'Quốc tịch': nationality,
+      'Ngày sinh': dateOfBirth,
+      'Số CCCD/Hộ chiếu': citizenIdNumber,
+      'Ngày cấp': dateIssued,
+      'Nơi cấp': issuingLocation,
+      'Địa chỉ': address,
+      'Trình độ đào tạo': levelOfTraining,
+      'Ngày bắt đầu': startDate,
+      'Số ngày thử việc': probationDays,
+      'Nơi làm việc': workLocation,
+      'Vị trí công việc': jobPosition,
+    };
+
+    const emptyField = Object.entries(requiredFields).find(([_, value]) => !value || value.toString().trim() === '');
+    if (emptyField) {
+      setError(`Vui lòng điền đầy đủ thông tin: ${emptyField[0]}`);
+      return false;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(accountEmail)) {
+      setError('Email không hợp lệ');
+      return false;
+    }
+
+    return true;
+  };
+
+  // Handle submit
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setSuccess(false);
+
+    try {
+      const request: CreateContractRequestDTO = {
+        decisionNumber,
+        decisionDate,
+        email: accountEmail,
+        fullName,
+        nationality,
+        dateOfBirth,
+        citizenIdNumber,
+        soCCCD: citizenIdNumber,
+        dateIssued,
+        issuingLocation,
+        address,
+        levelOfTraining,
+        startDate,
+        endDate,
+        salaryRank: salaryGrade,
+        level: salaryStep,
+        percentageOfSalary: parseFloat(percentageOfSalary) || 0,
+        probationarySalary: parseFloat(probationarySalary.replace(/\./g, '')) || 0,
+        jobPosition: String(jobPosition),
+        branchId: Number(workLocation) || 1,
+      };
+
+      const response = await contractService.initContract(request, uploadedFiles);
+      
+      setSuccess(true);
+      setError('');
+      
+      // Reset form
+      setTimeout(() => {
+        setDecisionNumber('');
+        setDecisionDate('');
+        setFullName('');
+        setAccountEmail('');
+        setNationality('');
+        setBirthDate('');
+        setCitizenIdNumber('');
+        setIssueDate('');
+        setIssuingLocation('');
+        setAddress('');
+        setLevelOfTraining('');
+        setStartDate('');
+        setProbationDays('');
+        setWorkLocation('');
+        setJobPosition('');
+        setUploadedFiles([]);
+        setSuccess(false);
+        
+        // Optionally navigate back
+        onBack();
+      }, 2000);
+      
+      console.log('Contract created:', response);
+      alert(`Tạo hợp đồng thành công! Mã hợp đồng: ${response.contractCode}`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Lỗi tạo hợp đồng';
+      setError(errorMessage);
+      console.error('Error creating contract:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <section className="create-contract-page" aria-label="Thêm mới hợp đồng thử việc">
@@ -147,8 +352,13 @@ function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
           <span>Thêm mới hợp đồng thử việc</span>
         </button>
         <div className="create-actions">
-          <button type="button" className="btn btn-primary">
-            + Thêm mới
+          <button 
+            type="button" 
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Đang xử lý...' : '+ Thêm mới'}
           </button>
           <button type="button" className="btn btn-ghost btn-with-icon">
             <span className="btn-icon-inline" aria-hidden="true">
@@ -188,11 +398,26 @@ function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
 
           <div className="form-section">
             <h3>Thông tin hợp đồng</h3>
+            {error && (
+              <div className="error-message" style={{ marginBottom: '20px', padding: '12px', backgroundColor: '#fff2f0', border: '1px solid #ffccc7', borderRadius: '6px', color: '#d9534f', fontSize: '14px' }}>
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="success-message" style={{ marginBottom: '20px', padding: '12px', backgroundColor: '#f0f9ff', border: '1px solid #a6e3a1', borderRadius: '6px', color: '#22863a', fontSize: '14px' }}>
+                ✓ Hợp đồng đã được tạo thành công!
+              </div>
+            )}
             <div className="form-grid two-columns">
               <label>
                 <span>Căn cứ quyết định số</span>
                 <div className="inline-field">
-                  <input type="text" placeholder="Nhập số" />
+                  <input 
+                    type="text" 
+                    placeholder="Nhập số"
+                    value={decisionNumber}
+                    onChange={(e) => setDecisionNumber(e.target.value)}
+                  />
                   <span>/QĐ-NHNo-TCNS</span>
                 </div>
               </label>
@@ -214,52 +439,93 @@ function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
               <div className="form-grid single-column">
                 <label>
                   <span>Họ và tên</span>
-                  <input type="text" placeholder="Nhập họ và tên" />
+                  <input 
+                    type="text" 
+                    placeholder="Nhập họ và tên"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <span>Quốc tịch</span>
-                  <input type="text" placeholder="Chọn quốc tịch" />
+                  <span>Email nhận tài khoản</span>
+                  <input 
+                    type="email" 
+                    placeholder="Nhập email" 
+                    value={accountEmail} 
+                    onChange={(e) => setAccountEmail(e.target.value)} 
+                  />
                 </label>
                 <label>
                   <span>Nơi cấp</span>
-                  <input type="text" placeholder="Nhập nơi cấp" />
+                  <input 
+                    type="text" 
+                    placeholder="Nhập nơi cấp"
+                    value={issuingLocation}
+                    onChange={(e) => setIssuingLocation(e.target.value)}
+                  />
                 </label>
               </div>
 
               <div className="form-grid single-column">
-                <label>
-                  <span>Ngày sinh</span>
-                  <DateInputWithPicker
-                    placeholder="Chọn ngày sinh"
-                    ariaLabel="Ngày sinh"
-                    value={birthDate}
-                    onChange={setBirthDate}
-                  />
-                </label>
+                <div className="form-grid two-columns">
+                  <label>
+                    <span>Quốc tịch</span>
+                    <input 
+                      type="text" 
+                      placeholder="Chọn quốc tịch"
+                      value={nationality}
+                      onChange={(e) => setNationality(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Ngày sinh</span>
+                    <DateInputWithPicker
+                      placeholder="Chọn ngày sinh"
+                      ariaLabel="Ngày sinh"
+                      value={dateOfBirth}
+                      onChange={setBirthDate}
+                    />
+                  </label>
+                </div>
                 <div className="form-grid two-columns">
                   <label>
                     <span>Số CCCD/Hộ chiếu</span>
-                    <input type="text" placeholder="Nhập số CCCD" />
+                    <input 
+                      type="text" 
+                      placeholder="Nhập số CCCD"
+                      value={citizenIdNumber}
+                      onChange={(e) => setCitizenIdNumber(e.target.value)}
+                    />
                   </label>
                   <label>
                     <span>Ngày cấp</span>
                     <DateInputWithPicker
                       placeholder="Chọn ngày cấp"
                       ariaLabel="Ngày cấp"
-                      value={issueDate}
+                      value={dateIssued}
                       onChange={setIssueDate}
                     />
                   </label>
                 </div>
                 <label>
                   <span>Địa chỉ thường trú</span>
-                  <input type="text" placeholder="Nhập địa chỉ thường trú" />
+                  <input 
+                    type="text" 
+                    placeholder="Nhập địa chỉ thường trú"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                  />
                 </label>
               </div>
 
               <label className="full-width">
                 <span>Trình độ đào tạo</span>
-                <input type="text" placeholder="Nhập trình độ đào tạo" />
+                <input 
+                  type="text" 
+                  placeholder="Nhập trình độ đào tạo"
+                  value={levelOfTraining}
+                  onChange={(e) => setLevelOfTraining(e.target.value)}
+                />
               </label>
             </div>
           </div>
@@ -268,8 +534,47 @@ function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
             <h3>Tài liệu đính kèm</h3>
             <div className="upload-box">
               <strong>Tải lên tài liệu</strong>
-              <span>Định dạng Word, PDF</span>
+              <span>Định dạng PDF</span>
+              <input 
+                type="file" 
+                multiple
+                accept=".pdf"
+                onChange={handleFileUpload}
+                aria-label="Tải lên tài liệu PDF"
+              />
             </div>
+            {uploadedFiles.length > 0 && (
+              <div className="uploaded-files-grid">
+                <strong>Tài liệu đã tải lên:</strong>
+                <div className="files-card-container">
+                  {uploadedFiles.map((file, index) => (
+                    <div key={index} className="file-card">
+                      <div className="file-icon">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M13 2v7h7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
+                      <div className="file-info">
+                        <p className="file-name">{file.name}</p>
+                        <p className="file-size">{(file.size / 1024).toFixed(2)} KB</p>
+                      </div>
+                      <button 
+                        type="button" 
+                        className="remove-file-btn"
+                        onClick={() => handleRemoveFile(index)}
+                        aria-label={`Xóa file ${file.name}`}
+                        title="Xóa file"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -322,27 +627,54 @@ function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
           <div className="form-section compact">
             <h3>Quyền lợi người lao động</h3>
             <div className="form-grid single-column">
-              <label>
-                <span>Tên vị trí công việc</span>
-                <input type="text" placeholder="Nhập tên vị trí công việc" />
-              </label>
+              <div className="form-grid two-columns">
+                <label>
+                  <span>Nơi làm việc</span>
+                  <SearchableSelect
+                    options={branches.map((branch) => ({
+                      id: branch.id,
+                      label: branch.branchName,
+                    }))}
+                    value={workLocation}
+                    onChange={setWorkLocation}
+                    placeholder="Chọn nơi làm việc"
+                    disabled={branchesLoading}
+                  />
+                </label>
+                <label>
+                  <span>Vị trí công việc</span>
+                  <SearchableSelect
+                    options={JOB_POSITIONS.map((position, index) => ({
+                      id: position,
+                      label: position,
+                    }))}
+                    value={jobPosition}
+                    onChange={setJobPosition}
+                    placeholder="Chọn vị trí công việc"
+                  />
+                </label>
+              </div>
               <div className="form-grid two-columns">
                 <label>
                   <span>Ngạch lương</span>
-                  <select value={salaryGrade} onChange={(event) => setSalaryGrade(event.target.value)} required>
-                    <option value="" disabled>
-                      Chọn ngạch
-                    </option>
+                  <select 
+                    value={salaryGrade} 
+                    onChange={(event) => setSalaryGrade(event.target.value)} 
+                    disabled
+                    required
+                  >
                     <option value="Ngạch 5">Ngạch 5</option>
                     <option value="Ngạch 7">Ngạch 7</option>
                   </select>
                 </label>
                 <label>
                   <span>Mức</span>
-                  <select value={salaryStep} onChange={(event) => setSalaryStep(event.target.value)} required>
-                    <option value="" disabled>
-                      Chọn mức
-                    </option>
+                  <select 
+                    value={salaryStep} 
+                    onChange={(event) => setSalaryStep(event.target.value)} 
+                    disabled
+                    required
+                  >
                     {salaryStepOptions.map((optionValue) => (
                       <option key={optionValue} value={optionValue}>
                         {optionValue}
@@ -354,11 +686,24 @@ function AddProbationContractForm({ onBack }: AddProbationContractFormProps) {
               <div className="form-grid two-columns">
                 <label>
                   <span>% lương thử việc</span>
-                  <input type="text" placeholder="Nhập %" />
+                  <input 
+                    type="text" 
+                    placeholder="Nhập %" 
+                    value={percentageOfSalary}
+                    onChange={(e) => setPercentageOfSalary(e.target.value)}
+                    disabled
+                  />
                 </label>
                 <label>
                   <span>Mức lương thử việc (VND)</span>
-                  <input type="text" placeholder="Tự động tính" className="computed-field" readOnly disabled />
+                  <input 
+                    type="text" 
+                    placeholder="Tự động tính" 
+                    className="computed-field" 
+                    value={probationarySalary}
+                    onChange={(e) => setProbationarySalary(e.target.value)}
+                    disabled
+                  />
                 </label>
               </div>
             </div>

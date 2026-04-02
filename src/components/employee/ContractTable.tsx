@@ -1,6 +1,46 @@
-import React, { useRef, useState } from 'react';
-import { contracts } from '../../data/employeeDashboardData';
-import { ContractStatus } from '../../types/employee';
+import React, { useRef, useState, useEffect } from 'react';
+import '../../style/employee-management.css';
+
+interface Staff {
+  id: number;
+  fullName: string;
+  dateOfBirth: string;
+  address: string;
+  dateIssued: string;
+  soCCCD: string;
+  issuingLocation: string;
+  levelOfTraining: string;
+  branchId: number;
+  email: string;
+  username: string;
+}
+
+interface ContractData {
+  contractCode: string;
+  decisionNumber: string;
+  decisionDate: string;
+  email: string;
+  startDate: string;
+  endDate: string;
+  status: 'PENDING_SIGN' | 'COMPLETED' | 'REJECTED';
+  branchId: number;
+  branchName: string;
+  jobPosition: string;
+  level: string;
+  salaryRank: string;
+  percentageOfSalary: number;
+  probationarySalary: number;
+  createAt: string;
+  staff: Staff;
+}
+
+type ContractStatus = 'pending' | 'completed' | 'cancelled';
+
+const statusMapping: Record<string, ContractStatus> = {
+  'PENDING_SIGN': 'pending',
+  'COMPLETED': 'completed',
+  'REJECTED': 'cancelled'
+};
 
 const statusLabel: Record<ContractStatus, string> = {
   pending: 'Chờ ký',
@@ -16,6 +56,7 @@ const statusClassName: Record<ContractStatus, string> = {
 
 interface ContractTableProps {
   onAddNew: () => void;
+  selectedBranchId?: string | number;
 }
 
 function SearchFilterInput({ placeholder }: { placeholder: string }) {
@@ -86,7 +127,60 @@ function DateFilterInput({ placeholder }: { placeholder: string }) {
   );
 }
 
-function ContractTable({ onAddNew }: ContractTableProps) {
+function ContractTable({ onAddNew, selectedBranchId = 'all' }: ContractTableProps) {
+  const [contracts, setContracts] = useState<ContractData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchContracts = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        // If "Tất cả" is selected, fetch all contracts
+        if (selectedBranchId === 'all') {
+          const response = await fetch('http://localhost:8080/api/contracts/getAllContract');
+          if (!response.ok) {
+            throw new Error('Failed to fetch contracts');
+          }
+          const apiResponse = await response.json();
+          const contractList = apiResponse.data || [];
+          setContracts(contractList);
+        } else {
+          // Fetch contracts for specific branch
+          const response = await fetch(`http://localhost:8080/api/contracts/branch/${selectedBranchId}`);
+          if (!response.ok) {
+            throw new Error('Failed to fetch contracts');
+          }
+          const apiResponse = await response.json();
+          const contractList = apiResponse.data || [];
+          setContracts(contractList);
+        }
+      } catch (err) {
+        console.error('Error fetching contracts:', err);
+        setError('Không thể tải danh sách hợp đồng');
+        setContracts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchContracts();
+  }, [selectedBranchId]);
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('vi-VN');
+  };
+
+  const formatDateTime = (dateTimeString: string) => {
+    if (!dateTimeString) return '';
+    const date = new Date(dateTimeString);
+    return date.toLocaleDateString('vi-VN');
+  };
+
   return (
     <section className="panel contract-panel" aria-label="Danh sách hợp đồng thử việc">
       <header className="panel-header panel-header-actions">
@@ -120,124 +214,143 @@ function ContractTable({ onAddNew }: ContractTableProps) {
       </header>
 
       <div className="contract-table-wrapper">
-        <table className="contract-table">
-          <thead>
-            <tr>
-              <th className="col-stt">STT</th>
-              <th className="col-contract">Mã hợp đồng</th>
-              <th className="col-name">Họ và tên</th>
-              <th className="col-birth">Ngày sinh</th>
-              <th className="col-address">Địa chỉ thường trú</th>
-              <th className="col-start-date">Ngày bắt đầu</th>
-              <th className="col-end-date">Ngày kết thúc</th>
-              <th className="col-created">Thời gian tạo</th>
-              <th className="col-unit">Đơn vị</th>
-              <th className="col-status">Trạng thái</th>
-              <th className="col-action">Hành động</th>
-            </tr>
-            <tr className="filter-row">
-              <th className="col-stt" />
-              <th className="col-contract">
-                <SearchFilterInput placeholder="Tìm kiếm" />
-              </th>
-              <th className="col-name">
-                <SearchFilterInput placeholder="Tìm kiếm" />
-              </th>
-              <th className="col-birth">
-                <DateFilterInput placeholder="Chọn thời gian" />
-              </th>
-              <th className="col-address">
-                <SearchFilterInput placeholder="Tìm kiếm" />
-              </th>
-              <th className="col-start-date">
-                <DateFilterInput placeholder="Chọn thời gian" />
-              </th>
-              <th className="col-end-date">
-                <DateFilterInput placeholder="Chọn thời gian" />
-              </th>
-              <th className="col-created">
-                <DateFilterInput placeholder="Chọn thời gian" />
-              </th>
-              <th className="col-unit">
-                <input type="text" placeholder="Chọn đơn vị" />
-              </th>
-              <th className="col-status">
-                <input type="text" placeholder="Thời hạn" />
-              </th>
-              <th className="col-action" />
-            </tr>
-          </thead>
-          <tbody>
-            {contracts.map((contract) => (
-              <tr key={contract.id}>
-                <td className="col-stt">{contract.id}</td>
-                <td className="col-contract">{contract.contractCode}</td>
-                <td className="col-name">
-                  <div className="primary-text">{contract.fullName}</div>
-                  <span className="meta-row sub-text">
-                    <svg className="meta-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <rect x="2.2" y="3" width="11.6" height="10" rx="2" stroke="currentColor" strokeWidth="1.4" />
-                      <path d="M5 6.2h6M5 8.2h4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                    </svg>
-                    <span>{contract.employeeCode}</span>
-                  </span>
-                </td>
-                <td className="col-birth">{contract.birthDate}</td>
-                <td className="col-address address-cell">{contract.address}</td>
-                <td className="col-start-date">{contract.startDate}</td>
-                <td className="col-end-date">{contract.endDate}</td>
-                <td className="col-created">{contract.createdAt}</td>
-                <td className="col-unit">
-                  <div className="primary-text">{contract.unit}</div>
-                  <span className="meta-row sub-text">
-                    <svg className="meta-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path
-                        d="M2.6 12.8h10.8M3.6 12.8V6.3M12.4 12.8V6.3M5.9 12.8V8.3M10.1 12.8V8.3M2.6 6.3l5.4-3.1 5.4 3.1"
-                        stroke="currentColor"
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <span>{contract.unitCode}</span>
-                  </span>
-                </td>
-                <td className="col-status">
-                  <span className={`status-pill ${statusClassName[contract.status]}`}>{statusLabel[contract.status]}</span>
-                </td>
-                <td className="col-action">
-                  <button type="button" className="table-eye" aria-label={`Xem hợp đồng ${contract.contractCode}`}>
-                    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                      <path
-                        d="M2.3 10c1.8-3.1 4.6-4.7 7.7-4.7s5.9 1.6 7.7 4.7c-1.8 3.1-4.6 4.7-7.7 4.7S4.1 13.1 2.3 10z"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                      />
-                      <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.5" />
-                    </svg>
-                  </button>
-                </td>
+        {loading ? (
+          <div style={{ padding: '32px', textAlign: 'center', color: '#999' }}>
+            Đang tải dữ liệu...
+          </div>
+        ) : error ? (
+          <div style={{ padding: '32px', textAlign: 'center', color: '#d32f2f' }}>
+            {error}
+          </div>
+        ) : (
+          <table className="contract-table">
+            <thead>
+              <tr>
+                <th className="col-stt">STT</th>
+                <th className="col-contract">Mã hợp đồng</th>
+                <th className="col-name">Họ và tên</th>
+                <th className="col-birth">Ngày sinh</th>
+                <th className="col-address">Địa chỉ thường trú</th>
+                <th className="col-start-date">Ngày bắt đầu</th>
+                <th className="col-end-date">Ngày kết thúc</th>
+                <th className="col-created">Thời gian tạo</th>
+                <th className="col-unit">Đơn vị</th>
+                <th className="col-status">Trạng thái</th>
+                <th className="col-action">Hành động</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+              <tr className="filter-row">
+                <th className="col-stt" />
+                <th className="col-contract">
+                  <SearchFilterInput placeholder="Tìm kiếm" />
+                </th>
+                <th className="col-name">
+                  <SearchFilterInput placeholder="Tìm kiếm" />
+                </th>
+                <th className="col-birth">
+                  <DateFilterInput placeholder="Chọn thời gian" />
+                </th>
+                <th className="col-address">
+                  <SearchFilterInput placeholder="Tìm kiếm" />
+                </th>
+                <th className="col-start-date">
+                  <DateFilterInput placeholder="Chọn thời gian" />
+                </th>
+                <th className="col-end-date">
+                  <DateFilterInput placeholder="Chọn thời gian" />
+                </th>
+                <th className="col-created">
+                  <DateFilterInput placeholder="Chọn thời gian" />
+                </th>
+                <th className="col-unit">
+                  <input type="text" placeholder="Chọn đơn vị" />
+                </th>
+                <th className="col-status">
+                  <input type="text" placeholder="Thời hạn" />
+                </th>
+                <th className="col-action" />
+              </tr>
+            </thead>
+            <tbody>
+              {contracts.map((contract, index) => {
+                const status = statusMapping[contract.status] || 'pending';
+                const staff = contract.staff;
+                
+                // Skip rendering if staff is undefined or null
+                if (!staff) {
+                  return null;
+                }
+                
+                return (
+                  <tr key={contract.contractCode}>
+                    <td className="col-stt">{index + 1}</td>
+                    <td className="col-contract">{contract.contractCode}</td>
+                    <td className="col-name">
+                      <div className="primary-text">{staff.fullName || 'N/A'}</div>
+                      <span className="meta-row sub-text">
+                        <svg className="meta-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                          <rect x="2.2" y="3" width="11.6" height="10" rx="2" stroke="currentColor" strokeWidth="1.4" />
+                          <path d="M5 6.2h6M5 8.2h4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                        </svg>
+                        <span>{staff.soCCCD || staff.id || 'N/A'}</span>
+                      </span>
+                    </td>
+                    <td className="col-birth">{formatDate(staff.dateOfBirth)}</td>
+                    <td className="col-address address-cell">{staff.address}</td>
+                    <td className="col-start-date">{formatDate(contract.startDate)}</td>
+                    <td className="col-end-date">{formatDate(contract.endDate)}</td>
+                    <td className="col-created">{formatDateTime(contract.createAt)}</td>
+                    <td className="col-unit">
+                      <div className="primary-text">{contract.branchName}</div>
+                      <span className="meta-row sub-text">
+                        <svg className="meta-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                          <path
+                            d="M2.6 12.8h10.8M3.6 12.8V6.3M12.4 12.8V6.3M5.9 12.8V8.3M10.1 12.8V8.3M2.6 6.3l5.4-3.1 5.4 3.1"
+                            stroke="currentColor"
+                            strokeWidth="1.3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span>{contract.jobPosition || 'N/A'}</span>
+                      </span>
+                    </td>
+                    <td className="col-status">
+                      <span className={`status-pill ${statusClassName[status]}`}>{statusLabel[status]}</span>
+                    </td>
+                    <td className="col-action">
+                      <button type="button" className="table-eye" aria-label={`Xem hợp đồng ${contract.contractCode}`}>
+                        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                          <path
+                            d="M2.3 10c1.8-3.1 4.6-4.7 7.7-4.7s5.9 1.6 7.7 4.7c-1.8 3.1-4.6 4.7-7.7 4.7S4.1 13.1 2.3 10z"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          />
+                          <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      <footer className="table-footer">
-        <p>Hiển thị 1 - 20 trên 1200 bản ghi</p>
-        <div className="pagination">
-          <button type="button">&lt;</button>
-          <button type="button" className="active">
-            6
-          </button>
-          <button type="button">7</button>
-          <button type="button">8</button>
-          <button type="button">&gt;</button>
-        </div>
-      </footer>
+      {!loading && contracts.length > 0 && (
+        <footer className="table-footer">
+          <p>Hiển thị 1 - {contracts.length} trên {contracts.length} bản ghi</p>
+          <div className="pagination">
+            <button type="button">&lt;</button>
+            <button type="button" className="active">
+              1
+            </button>
+            <button type="button">&gt;</button>
+          </div>
+        </footer>
+      )}
     </section>
   );
 }
 
 export default ContractTable;
-export { ContractTable };
