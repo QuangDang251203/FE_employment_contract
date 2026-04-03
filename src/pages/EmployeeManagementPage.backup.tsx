@@ -7,6 +7,11 @@ import AppLayout from '../components/layout/AppLayout';
 function EmployeeManagementPage() {
   const [isCreating, setIsCreating] = useState(false);
 
+  const handleViewContract = (contractCode: string) => {
+    // Handle view contract action
+    console.log('View contract:', contractCode);
+  };
+
   return (
     <AppLayout>
       {isCreating ? (
@@ -14,7 +19,10 @@ function EmployeeManagementPage() {
       ) : (
         <div className="employee-dashboard-grid">
           <UnitListPanel />
-          <ContractTable onAddNew={() => setIsCreating(true)} />
+          <ContractTable 
+            onAddNew={() => setIsCreating(true)}
+            onViewContract={handleViewContract}
+          />
         </div>
       )}
     </AppLayout>

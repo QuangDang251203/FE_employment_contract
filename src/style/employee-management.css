@@ -560,6 +560,15 @@
   color: #2f3a56;
 }
 
+.contract-table-row {
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.contract-table-row:hover {
+  background-color: #f0f4f9;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
 .filter-row th {
   background: #ffffff;
   border-bottom: 1px solid #eceff3;
@@ -689,7 +698,12 @@
 
 .status-completed {
   color: #0c8a3e;
-  background: #e8f7ea;
+  background: #FFDF5D;
+}
+
+.status-stamped {
+  color: #2e7d32;
+  background: #34D058;
 }
 
 .status-cancelled {
@@ -713,6 +727,40 @@
 .table-eye svg {
   width: 17px;
   height: 17px;
+}
+
+.table-icon-btn {
+  border: 0;
+  background: transparent;
+  color: #7a8498;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  margin-right: 4px;
+}
+
+.table-icon-btn:hover:not(:disabled) {
+  transform: scale(1.1);
+  opacity: 0.8;
+}
+
+.table-icon-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.table-icon-btn.danger {
+  color: #d32f2f;
+}
+
+.table-icon-btn .action-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 
 .table-footer {

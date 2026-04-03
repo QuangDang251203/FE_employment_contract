@@ -1,5 +1,9 @@
 import React, { useRef, useState, useEffect } from 'react';
 import '../../style/employee-management.css';
+import ViewContractDetail from './ViewContractDetail';
+import approveIcon from '../../assets/icon_action_with_contract/clipboard-tick.png';
+import rejectIcon from '../../assets/icon_action_with_contract/clipboard-close.png';
+import stampImg from '../../assets/stamp/Stamp.png';
 
 interface Staff {
   id: number;
@@ -22,7 +26,7 @@ interface ContractData {
   email: string;
   startDate: string;
   endDate: string;
-  status: 'PENDING_SIGN' | 'COMPLETED' | 'REJECTED';
+  status: 'PENDING_SIGN' | 'COMPLETED' | 'STAMPED' | 'REJECTED' | '3';
   branchId: number;
   branchName: string;
   jobPosition: string;
@@ -34,28 +38,33 @@ interface ContractData {
   staff: Staff;
 }
 
-type ContractStatus = 'pending' | 'completed' | 'cancelled';
+type ContractStatus = 'pending' | 'completed' | 'stamped' | 'cancelled';
 
 const statusMapping: Record<string, ContractStatus> = {
   'PENDING_SIGN': 'pending',
   'COMPLETED': 'completed',
+  'STAMPED': 'stamped',
+  '3': 'stamped',
   'REJECTED': 'cancelled'
 };
 
 const statusLabel: Record<ContractStatus, string> = {
   pending: 'Chờ ký',
-  completed: 'Hoàn thành',
+  completed: 'Chờ duyệt',
+  stamped: 'Đã duyệt',
   cancelled: 'Đã hủy'
 };
 
 const statusClassName: Record<ContractStatus, string> = {
   pending: 'status-pending',
   completed: 'status-completed',
+  stamped: 'status-stamped',
   cancelled: 'status-cancelled'
 };
 
 interface ContractTableProps {
   onAddNew: () => void;
+  onViewContract: (contractCode: string) => void;
   selectedBranchId?: string | number;
 }
 
@@ -127,10 +136,13 @@ function DateFilterInput({ placeholder }: { placeholder: string }) {
   );
 }
 
-function ContractTable({ onAddNew, selectedBranchId = 'all' }: ContractTableProps) {
+function ContractTable({ onAddNew, onViewContract, selectedBranchId = 'all' }: ContractTableProps) {
   const [contracts, setContracts] = useState<ContractData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [stampingContractCode, setStampingContractCode] = useState<string | null>(null);
+  const [confirmContractCode, setConfirmContractCode] = useState<string | null>(null);
+  const [showStampAnimation, setShowStampAnimation] = useState(false);
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -179,6 +191,61 @@ function ContractTable({ onAddNew, selectedBranchId = 'all' }: ContractTableProp
     if (!dateTimeString) return '';
     const date = new Date(dateTimeString);
     return date.toLocaleDateString('vi-VN');
+  };
+
+  const handleStampContract = async (e: React.MouseEvent, contractCode: string) => {
+    e.stopPropagation();
+    setConfirmContractCode(contractCode);
+  };
+
+  const executeStampContract = async () => {
+    if (!confirmContractCode) return;
+    
+    setStampingContractCode(confirmContractCode);
+    try {
+      const response = await fetch(`http://localhost:8080/api/contracts/stamp/${confirmContractCode}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to stamp contract');
+      }
+
+      const result = await response.json();
+      if (result.code === 'SUCCESS') {
+        const stampedCode = confirmContractCode;
+        setConfirmContractCode(null);
+        setShowStampAnimation(true);
+        setTimeout(() => {
+          setShowStampAnimation(false);
+          // Refresh the contracts list
+          setContracts(prevContracts =>
+            prevContracts.map(contract =>
+              contract.contractCode === stampedCode
+                ? { ...contract, status: 'STAMPED' as const }
+                : contract
+            )
+          );
+        }, 1500);
+      } else {
+        throw new Error(result.message || 'Failed to stamp contract');
+      }
+    } catch (err) {
+      console.error('Error stamping contract:', err);
+      alert('Lỗi phê duyệt hợp đồng: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setConfirmContractCode(null);
+    } finally {
+      setStampingContractCode(null);
+    }
+  };
+
+  const handleRejectContract = (e: React.MouseEvent, _contractCode: string) => {
+    e.stopPropagation();
+    alert('Chức năng từ chối đang được phát triển');
   };
 
   return (
@@ -281,7 +348,12 @@ function ContractTable({ onAddNew, selectedBranchId = 'all' }: ContractTableProp
                 }
                 
                 return (
-                  <tr key={contract.contractCode}>
+                  <tr 
+                    key={contract.contractCode} 
+                    className="contract-table-row"
+                    onClick={() => onViewContract(contract.contractCode)} 
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td className="col-stt">{index + 1}</td>
                     <td className="col-contract">{contract.contractCode}</td>
                     <td className="col-name">
@@ -318,16 +390,40 @@ function ContractTable({ onAddNew, selectedBranchId = 'all' }: ContractTableProp
                       <span className={`status-pill ${statusClassName[status]}`}>{statusLabel[status]}</span>
                     </td>
                     <td className="col-action">
-                      <button type="button" className="table-eye" aria-label={`Xem hợp đồng ${contract.contractCode}`}>
-                        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                          <path
-                            d="M2.3 10c1.8-3.1 4.6-4.7 7.7-4.7s5.9 1.6 7.7 4.7c-1.8 3.1-4.6 4.7-7.7 4.7S4.1 13.1 2.3 10z"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                          />
-                          <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.5" />
-                        </svg>
-                      </button>
+                      {status === 'completed' && (
+                        <>
+                          <button 
+                            type="button" 
+                            className="table-icon-btn" 
+                            onClick={(e) => handleStampContract(e, contract.contractCode)}
+                            disabled={stampingContractCode === contract.contractCode}
+                            aria-label={`Phê duyệt hợp đồng ${contract.contractCode}`}
+                            title="Phê duyệt"
+                          >
+                            <img src={approveIcon} alt="Phê duyệt" className="action-icon" />
+                          </button>
+                          <button 
+                            type="button" 
+                            className="table-icon-btn danger" 
+                            onClick={(e) => handleRejectContract(e, contract.contractCode)}
+                            aria-label={`Từ chối hợp đồng ${contract.contractCode}`}
+                            title="Từ chối"
+                          >
+                            <img src={rejectIcon} alt="Từ chối" className="action-icon" />
+                          </button>
+                        </>
+                      )}
+                      {status === 'pending' && (
+                        <button 
+                          type="button" 
+                          className="table-icon-btn danger" 
+                          onClick={(e) => handleRejectContract(e, contract.contractCode)}
+                          aria-label={`Từ chối hợp đồng ${contract.contractCode}`}
+                          title="Từ chối"
+                        >
+                          <img src={rejectIcon} alt="Từ chối" className="action-icon" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -348,6 +444,57 @@ function ContractTable({ onAddNew, selectedBranchId = 'all' }: ContractTableProp
             <button type="button">&gt;</button>
           </div>
         </footer>
+      )}
+
+      {confirmContractCode && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ background: 'white', padding: '24px', borderRadius: '8px', width: '400px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ margin: '0 0 16px', color: '#1f2a44' }}>Xác nhận phê duyệt</h3>
+            <p style={{ margin: '0 0 24px', color: '#4f5f77', lineHeight: '1.5' }}>Bạn có chắc chắn muốn phê duyệt hợp đồng <strong>{confirmContractCode}</strong>? Hành động này sẽ đóng dấu và phát hành hợp đồng chính thức.</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button 
+                onClick={() => setConfirmContractCode(null)}
+                style={{ padding: '8px 16px', border: '1px solid #eaebef', background: '#fff', borderRadius: '6px', cursor: 'pointer', color: '#4f5f77', fontWeight: 500 }}
+                disabled={!!stampingContractCode}
+              >
+                Hủy
+              </button>
+              <button 
+                onClick={executeStampContract}
+                style={{ padding: '8px 16px', border: 'none', background: '#2e7d32', borderRadius: '6px', cursor: 'pointer', color: '#fff', fontWeight: 500 }}
+                disabled={!!stampingContractCode}
+              >
+                {stampingContractCode ? 'Đang xử lý...' : 'Xác nhận phê duyệt'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStampAnimation && (
+        <div style={{ 
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 3000, 
+          display: 'flex', justifyContent: 'center', alignItems: 'center' 
+        }}>
+          <img 
+            src={stampImg} 
+            alt="Đã đóng dấu" 
+            style={{ 
+              width: '250px', 
+              animation: 'stampIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards' 
+            }} 
+          />
+          <style>
+            {`
+              @keyframes stampIn {
+                0% { transform: scale(3) rotate(15deg); opacity: 0; }
+                50% { transform: scale(1) rotate(-5deg); opacity: 1; }
+                100% { transform: scale(1) rotate(0deg); opacity: 1; }
+              }
+            `}
+          </style>
+        </div>
       )}
     </section>
   );

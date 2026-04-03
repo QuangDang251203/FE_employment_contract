@@ -19,13 +19,32 @@ interface ContractDetail {
   staffFullName: string;
   startDate: string;
   endDate: string;
+  status: string; // PENDING_SIGN, COMPLETED, STAMPED, etc.
   staffDocuments: Document[];
+}
+
+interface ProcessFileDTO {
+  id: number;
+  fileType: 'GENERATED_PDF' | 'SIGNED_PDF' | 'STAMPED_PDF';
+  signAt: string;
+}
+
+function formatDateTimeVN(isoString: string): string {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${hours}:${minutes} ${day}/${month}/${year}`;
 }
 
 const ViewProbationContractPage: React.FC = () => {
   const { contractCode } = useParams<{ contractCode: string }>();
   const navigate = useNavigate();
   const [contract, setContract] = useState<ContractDetail | null>(null);
+  const [processFiles, setProcessFiles] = useState<ProcessFileDTO[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +53,7 @@ const ViewProbationContractPage: React.FC = () => {
   // Signature modal states
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [signatureBlob, setSignatureBlob] = useState<Blob | null>(null);
   const signatureCanvasRef = React.useRef<HTMLCanvasElement>(null);
   
   // OTP modal states
@@ -56,7 +76,20 @@ const ViewProbationContractPage: React.FC = () => {
 
         const data = await response.json();
         if (data.code === 'SUCCESS') {
-          setContract(data.data);
+          // Detect status from contractFiles array
+          // If signed PDF exists, contract is COMPLETED
+          const contractData = data.data;
+          const hasSignedPdf = contractData.contractFiles?.some(
+            (file: any) => file.fileType === 'SIGNED_PDF' || file.fileType === 'application/pdf' && file.fileName?.includes('signed')
+          );
+          
+          if (hasSignedPdf && !contractData.status) {
+            contractData.status = 'COMPLETED';
+          }
+          
+          console.log('Contract data fetched:', contractData);
+          console.log('Contract status:', contractData.status);
+          setContract(contractData);
           
           // Create documents array with contract as first item
           const documentsWithContract = [
@@ -78,8 +111,21 @@ const ViewProbationContractPage: React.FC = () => {
       }
     };
 
+    const fetchProcessFiles = async () => {
+      try {
+        const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api'}/contracts/${contractCode}/process-files`);
+        if (response.ok) {
+          const data = await response.json();
+          setProcessFiles(data.data || []);
+        }
+      } catch (err) {
+        console.error('Error fetching process files:', err);
+      }
+    };
+
     if (contractCode) {
       fetchContract();
+      fetchProcessFiles();
     }
   }, [contractCode]);
 
@@ -92,7 +138,7 @@ const ViewProbationContractPage: React.FC = () => {
       const canvas = signatureCanvasRef.current;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.fillStyle = '#ECEFFE';
+        ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
     }
@@ -184,10 +230,28 @@ const ViewProbationContractPage: React.FC = () => {
   };
 
   const handleConfirmSignature = () => {
-    setShowSignatureModal(false);
-    setShowOTPModal(true);
-    setOtp(['', '', '', '', '', '']);
-    setOtpError('');
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) {
+      alert('Lỗi: Không thể tìm thấy canvas');
+      return;
+    }
+
+    // Capture signature blob before closing modal
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        alert('Lỗi: Không thể tạo file chữ ký');
+        return;
+      }
+      
+      console.log('Signature captured:', blob.size, 'bytes');
+      setSignatureBlob(blob);
+      
+      // Close signature modal and open OTP modal
+      setShowSignatureModal(false);
+      setShowOTPModal(true);
+      setOtp(['', '', '', '', '', '']);
+      setOtpError('');
+    }, 'image/png');
   };
 
   const handleRedrawSignature = () => {
@@ -241,42 +305,82 @@ const ViewProbationContractPage: React.FC = () => {
       return;
     }
 
+    // Check if signature was captured
+    if (!signatureBlob) {
+      setOtpError('Lỗi: Chữ ký không được tìm thấy. Vui lòng ký lại.');
+      console.error('Signature blob is null');
+      return;
+    }
+
     setOtpLoading(true);
     setOtpError('');
 
     try {
       const username = localStorage.getItem('signContractUsername');
+      console.log('Submitting OTP with signature:', {
+        username,
+        contractCode,
+        otpCode: otpCode.length,
+        signatureBlobSize: signatureBlob.size,
+      });
+
+      const formData = new FormData();
+      
+      // Create OTP DTO JSON
+      const otpDtoJson = JSON.stringify({
+        username: username,
+        contractCode: contractCode,
+        otpCode: otpCode,
+      });
+      
+      // Append OTP data as JSON blob
+      formData.append('otp', new Blob([otpDtoJson], { type: 'application/json' }), 'otp.json');
+      
+      // Append signature image
+      formData.append('signature', signatureBlob, 'signature.png');
+
+      console.log('FormData entries:', {
+        otpSize: new Blob([otpDtoJson]).size,
+        signatureSize: signatureBlob.size,
+      });
+
       const response = await fetch(
-        `${process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api'}/contracts/verify-otp`,
+        `${process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api'}/contracts/verify-otp-sign`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            username: username,
-            contractCode: contractCode,
-            otpCode: otpCode,
-          }),
+          body: formData,
         }
       );
 
+      console.log('Response status:', response.status);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData = await response.json().catch(() => ({
+          message: `HTTP ${response.status}`,
+        }));
+        console.error('Error response:', errorData);
         throw new Error(errorData.message || 'Xác nhận OTP thất bại');
       }
 
       const result = await response.json();
+      console.log('Success response:', result);
+
       if (result.code !== 'SUCCESS') {
         throw new Error(result.message || 'Xác nhận OTP thất bại');
       }
 
       setShowOTPModal(false);
+      setSignatureBlob(null);
       alert('Ký hợp đồng thành công!');
+
+      // Reload current page to show updated contract
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Lỗi xác nhận OTP';
+      console.error('OTP submit error:', errorMessage, err);
       setOtpError(errorMessage);
-    } finally {
       setOtpLoading(false);
     }
   };
@@ -357,6 +461,48 @@ const ViewProbationContractPage: React.FC = () => {
             <p className="view-contract-no-docs">Không có tài liệu</p>
           )}
         </div>
+
+        {/* Vertical Timeline */}
+        <h3 className="view-contract-sidebar-title" style={{ marginTop: '24px' }}>Tiến trình</h3>
+        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {[
+            { key: 'GENERATED_PDF', label: 'Tạo HĐ' },
+            { key: 'SIGNED_PDF', label: 'Ký' },
+            { key: 'STAMPED_PDF', label: 'Duyệt' }
+          ].map((step, index, arr) => {
+            const file = processFiles.find(f => f.fileType === step.key);
+            const isCompleted = !!file;
+            const nextFile = index < arr.length - 1 ? processFiles.find(f => f.fileType === arr[index + 1].key) : null;
+            
+            return (
+              <div key={step.key} style={{ display: 'flex', position: 'relative' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '12px' }}>
+                  <div style={{ 
+                    width: '24px', height: '24px', borderRadius: '50%', 
+                    background: isCompleted ? '#2e7d32' : '#fff',
+                    border: isCompleted ? '2px solid #2e7d32' : '2px solid #ffcdd2',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: isCompleted ? '#fff' : '#d32f2f', fontSize: '12px', fontWeight: 'bold',
+                    zIndex: 2
+                  }}>
+                    {isCompleted ? '✓' : (index + 1)}
+                  </div>
+                  {index < arr.length - 1 && (
+                    <div style={{ width: '2px', height: '40px', background: nextFile ? '#2e7d32' : '#ffebee', flex: 1 }} />
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '2px', paddingBottom: '16px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: isCompleted ? '#2e7d32' : '#7a8498' }}>{step.label}</span>
+                  {isCompleted && (
+                    <span style={{ fontSize: '12px', color: '#7a8498', marginTop: '2px' }}>
+                      {formatDateTimeVN(file.signAt)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </aside>
 
       <header className="view-contract-header">
@@ -371,23 +517,21 @@ const ViewProbationContractPage: React.FC = () => {
         </div>
 
         <div className="view-contract-header-actions">
-          <button className="view-contract-btn btn-sign" onClick={handleSign}>
-            <img src={iconSign} alt="ký" className="view-contract-btn-icon" />
-            Ký
-          </button>
-          <button className="view-contract-btn btn-reject" onClick={handleReject}>
-            <svg viewBox="0 0 20 20" fill="none">
-              <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2" />
-              <path d="M6 10h8" stroke="currentColor" strokeWidth="2" />
-            </svg>
-            Từ chối
-          </button>
-          <button className="view-contract-btn btn-evidence">
-            <svg viewBox="0 0 20 20" fill="none">
-              <path d="M10 5v10m5-5H5" stroke="currentColor" strokeWidth="2" />
-            </svg>
-            Bằng chứng
-          </button>
+          {contract && (contract.status !== 'COMPLETED' && contract.status !== 'STAMPED') ? (
+            <>
+              <button className="view-contract-btn btn-sign" onClick={handleSign}>
+                <img src={iconSign} alt="ký" className="view-contract-btn-icon" />
+                Ký
+              </button>
+              <button className="view-contract-btn btn-reject" disabled>
+                <svg viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2" />
+                  <path d="M6 10h8" stroke="currentColor" strokeWidth="2" />
+                </svg>
+                Từ chối
+              </button>
+            </>
+          ) : null}
           <button className="view-contract-btn btn-download" onClick={handleDownload}>
             <img src={iconDownload} alt="tải xuống" className="view-contract-btn-icon" />
             Tải xuống
@@ -562,19 +706,5 @@ const ViewProbationContractPage: React.FC = () => {
 };
 
 export default ViewProbationContractPage;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
